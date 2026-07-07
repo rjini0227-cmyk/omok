@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://rjini0227-cmyk.github.io/omok/sitemap.xml
