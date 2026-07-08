@@ -119,6 +119,23 @@ button:disabled{opacity:.45; cursor:not-allowed}
 .switch input:checked + .slider:before{transform:translateX(20px)}
 .hint{font-size:12px; color:var(--sub); line-height:1.6}
 .hint b{color:var(--accent2)}
+/* ---------- 채팅 & 전적 ---------- */
+.cardTitle{font-weight:800; font-size:15px; display:flex; justify-content:space-between; align-items:center}
+#chatLog{height:170px; overflow-y:auto; background:#f5f7fa; border-radius:10px; padding:10px;
+  margin:10px 0; display:flex; flex-direction:column; gap:6px}
+.chatMsg{max-width:88%; align-self:flex-start}
+.chatMsg.me{align-self:flex-end; text-align:right}
+.chatMsg .cn{font-size:11px; color:var(--sub); margin:0 4px}
+.chatMsg .cb{display:inline-block; background:#fff; border:1px solid #e1e7ee; padding:7px 11px;
+  border-radius:12px; font-size:14px; word-break:break-word; text-align:left}
+.chatMsg.me .cb{background:var(--accent); color:#fff; border-color:var(--accent)}
+.chatRow{display:flex; gap:6px}
+.chatRow input{flex:1; padding:10px 12px; font-size:14px}
+.chatRow button{flex:0 0 64px; padding:10px 0}
+.statRow{display:flex; justify-content:space-between; font-size:13.5px; margin-top:8px}
+.statRow span:last-child{font-weight:700}
+#statsReset{background:none; color:var(--sub); font-size:12px; padding:4px 6px; font-weight:600}
+#statsReset:hover{color:var(--accent2)}
 /* ---------- 모달 ---------- */
 .overlay{
   position:fixed; inset:0; background:rgba(10,16,26,.72); backdrop-filter:blur(3px);
@@ -242,6 +259,20 @@ footer a:hover{text-decoration:underline}
         <button class="btn-red" id="restartBtn">⟳ 다시 시작</button>
         <button class="btn-blue" id="newBtn" style="grid-column:span 2">⚙ 새 게임 (설정 변경)</button>
       </div>
+    </div>
+
+    <div class="card" id="chatCard" style="display:none">
+      <div class="cardTitle">💬 채팅</div>
+      <div id="chatLog"></div>
+      <div class="chatRow">
+        <input type="text" id="chatInput" maxlength="100" placeholder="메시지 입력...">
+        <button class="btn-blue" id="chatSend">전송</button>
+      </div>
+    </div>
+
+    <div class="card" id="statsCard">
+      <div class="cardTitle">📊 내 전적 <button id="statsReset">초기화</button></div>
+      <div id="statsBody"></div>
     </div>
 
     <div class="card toggles">
@@ -668,8 +699,24 @@ function drawStone(x,y,c){
   if(c===WHITE){ ctx.strokeStyle='rgba(0,0,0,.18)'; ctx.lineWidth=1; ctx.stroke(); }
 }
 
+/* ---------- 전적 기록 (localStorage) ---------- */
+function loadStats(){ try{ return JSON.parse(localStorage.getItem('omok_stats'))||{} }catch(e){ return {} } }
+function saveStats(s){ try{ localStorage.setItem('omok_stats', JSON.stringify(s)) }catch(e){} }
+function recordResult(kind, result){ /* kind: 'ai'|'online', result: 'w'|'l'|'d' */
+  const s=loadStats(); s[kind]=s[kind]||{w:0,l:0,d:0}; s[kind][result]++; saveStats(s); renderStats();
+}
+function renderStats(){
+  const s=loadStats();
+  const row=(label,o)=>{
+    o=o||{w:0,l:0,d:0}; const t=o.w+o.l+o.d;
+    const r=t? Math.round(o.w/t*100) : 0;
+    return `<div class="statRow"><span>${label}</span><span>${o.w}승 ${o.l}패 ${o.d}무 · ${t?('승률 '+r+'%'):'기록 없음'}</span></div>`;
+  };
+  $('statsBody').innerHTML = row('🤖 AI 대전', s.ai) + row('🌐 온라인', s.online);
+}
+
 /* ---------- 온라인 (Firebase) ---------- */
-let db=null, roomId=null, roomRef=null, movesRef=null, onlineColor=null, oppName='상대';
+let db=null, roomId=null, roomRef=null, movesRef=null, chatRef=null, onlineColor=null, oppName='상대';
 let appliedMoves=0, roundVal=0, onlineStarted=false, iAmHost=false;
 let myName = '';
 try{ myName = localStorage.getItem('omok_nick') || ''; }catch(e){}
@@ -796,15 +843,39 @@ function attachRoom(){
     if(!m) return;
     applyMoveCore(m.x, m.y);
   });
+  /* 채팅 */
+  $('chatLog').innerHTML='';
+  chatRef = roomRef.child('chat');
+  chatRef.on('child_added', snap=>{ addChatMsg(snap.val()); });
+}
+function addChatMsg(m){
+  if(!m || !m.t) return;
+  const log=$('chatLog');
+  const div=document.createElement('div');
+  div.className='chatMsg'+(m.u===myUid?' me':'');
+  const cn=document.createElement('div'); cn.className='cn'; cn.textContent=m.u===myUid?'나':(m.n||'상대');
+  const cb=document.createElement('div'); cb.className='cb'; cb.textContent=String(m.t).slice(0,100);
+  div.appendChild(cn); div.appendChild(cb);
+  log.appendChild(div);
+  while(log.children.length>200) log.removeChild(log.firstChild);
+  log.scrollTop=log.scrollHeight;
+}
+function sendChat(){
+  const inp=$('chatInput'), t=inp.value.trim();
+  if(!t || !chatRef) return;
+  chatRef.push({u:myUid, n:myName, t:t.slice(0,100), ts:firebase.database.ServerValue.TIMESTAMP});
+  inp.value='';
 }
 function detachRoom(setClosed){
   if(roomRef){
     if(setClosed) roomRef.update({status:'closed'}).catch(()=>{});
     roomRef.off(); movesRef.off();
+    if(chatRef) chatRef.off();
     roomRef.child('presence/'+myUid).onDisconnect().cancel().catch(()=>{});
   }
   if(roomId) db.ref('lobby/'+roomId).remove().catch(()=>{});
-  roomRef=null; movesRef=null; roomId=null; onlineStarted=false;
+  roomRef=null; movesRef=null; chatRef=null; roomId=null; onlineStarted=false;
+  $('chatCard').style.display='none';
 }
 function onlineAbort(msg){
   detachRoom(false);
@@ -824,6 +895,7 @@ function startOnlineGame(){
   $('nameBlack').textContent = meB ? myName+' (나)' : oppName;
   $('nameWhite').textContent = meB ? oppName : myName+' (나)';
   $('undoBtn').disabled = true;
+  $('chatCard').style.display='';
   refreshForbidden(); updatePanel(); draw();
 }
 function sendMove(x,y){
@@ -904,6 +976,12 @@ function endGame(winner, cells){
       rText.textContent = name+' 승리!';
     }
     sound('win');
+  }
+  /* 전적 기록 (AI전·온라인전만) */
+  if(mode==='ai'){
+    recordResult('ai', winner===0 ? 'd' : (winner===myColor ? 'w' : 'l'));
+  }else if(mode==='online'){
+    recordResult('online', winner===0 ? 'd' : (winner===onlineColor ? 'w' : 'l'));
   }
   rSub.textContent = `총 ${total}수 · ${dur}`;
   $('againBtn').textContent = mode==='online' ? '🔄 재대결 신청' : '같은 설정으로 다시';
@@ -1128,6 +1206,16 @@ $('setupBtn').addEventListener('click', ()=>{
 });
 $('undoBtn').addEventListener('click', undo);
 $('fbToggle').addEventListener('change', draw);
+/* 채팅 전송 */
+$('chatSend').addEventListener('click', sendChat);
+$('chatInput').addEventListener('keydown', e=>{ if(e.key==='Enter') sendChat(); });
+/* 전적 초기화 */
+$('statsReset').addEventListener('click', ()=>{
+  if(confirm('전적 기록을 모두 초기화할까요?')){
+    try{ localStorage.removeItem('omok_stats'); }catch(e){}
+    renderStats(); toast('전적을 초기화했어요');
+  }
+});
 /* 설정 팝업 닫기: ✕ 버튼, 바깥 클릭, ESC */
 function closeSetup(){ $('setupModal').classList.add('hidden'); }
 $('setupClose').addEventListener('click', closeSetup);
@@ -1138,9 +1226,10 @@ document.addEventListener('keydown', e=>{
 window.addEventListener('beforeunload', ()=>{ if(mode==='online') detachRoom(true); });
 
 /* ---------- 시작 ---------- */
-/* v2.0 - online */
+/* v2.1 - online + chat + stats */
 setupCanvas();
 board=newBoard(); moves=[]; turn=BLACK; gameOver=true;
+renderStats();
 draw();
 
 })();
