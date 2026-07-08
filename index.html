@@ -126,10 +126,16 @@ button:disabled{opacity:.45; cursor:not-allowed}
 }
 .overlay.hidden{display:none}
 .modal{
+  position:relative;
   background:#fff; border-radius:18px; padding:28px 26px; width:100%; max-width:430px;
   box-shadow:0 24px 60px rgba(0,0,0,.5); animation:pop .22s ease;
   max-height:92vh; overflow-y:auto;
 }
+.modalClose{
+  position:absolute; top:12px; right:12px; width:36px; height:36px; padding:0;
+  background:#eef2f7; color:#5e6b7a; border-radius:50%; font-size:16px; line-height:1;
+}
+.modalClose:hover{background:#dde5ee}
 @keyframes pop{from{transform:scale(.92); opacity:0} to{transform:scale(1); opacity:1}}
 .modal h2{font-size:22px; font-weight:800; text-align:center; letter-spacing:-0.5px}
 .modal .sub{ text-align:center; color:var(--sub); font-size:13px; margin:6px 0 20px}
@@ -271,6 +277,7 @@ footer a:hover{text-decoration:underline}
 <!-- 게임 설정 모달 -->
 <div class="overlay" id="setupModal">
   <div class="modal">
+    <button class="modalClose" id="setupClose" title="닫기">✕</button>
     <h2>⚫⚪ 오목 한판</h2>
     <div class="sub">회원가입 없이 바로 시작하세요</div>
 
@@ -1121,6 +1128,13 @@ $('setupBtn').addEventListener('click', ()=>{
 });
 $('undoBtn').addEventListener('click', undo);
 $('fbToggle').addEventListener('change', draw);
+/* 설정 팝업 닫기: ✕ 버튼, 바깥 클릭, ESC */
+function closeSetup(){ $('setupModal').classList.add('hidden'); }
+$('setupClose').addEventListener('click', closeSetup);
+$('setupModal').addEventListener('click', e=>{ if(e.target===$('setupModal')) closeSetup(); });
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape' && !$('setupModal').classList.contains('hidden')) closeSetup();
+});
 window.addEventListener('beforeunload', ()=>{ if(mode==='online') detachRoom(true); });
 
 /* ---------- 시작 ---------- */
